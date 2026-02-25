@@ -1,0 +1,1764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How LLM Agents Work — A Visual Deep Dive</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ───────── CSS Variables & Reset ───────── */
+:root {
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #111118;
+  --bg-card: #16161f;
+  --bg-card-hover: #1c1c28;
+  --border: #2a2a3a;
+  --border-accent: #3a3a5a;
+  --text-primary: #e8e8f0;
+  --text-secondary: #9898b0;
+  --text-dim: #606078;
+  --accent-cyan: #00d4ff;
+  --accent-cyan-dim: rgba(0, 212, 255, 0.15);
+  --accent-orange: #ff8a00;
+  --accent-orange-dim: rgba(255, 138, 0, 0.12);
+  --accent-green: #00e88f;
+  --accent-green-dim: rgba(0, 232, 143, 0.12);
+  --accent-purple: #a78bfa;
+  --accent-purple-dim: rgba(167, 139, 250, 0.12);
+  --accent-red: #ff4d6a;
+  --accent-red-dim: rgba(255, 77, 106, 0.12);
+  --accent-yellow: #fbbf24;
+  --accent-yellow-dim: rgba(251, 191, 36, 0.12);
+  --font-display: 'Instrument Serif', Georgia, serif;
+  --font-body: 'DM Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --glow-cyan: 0 0 30px rgba(0, 212, 255, 0.3);
+  --glow-orange: 0 0 30px rgba(255, 138, 0, 0.3);
+}
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: var(--font-body);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.7;
+  overflow-x: hidden;
+}
+::selection { background: var(--accent-cyan); color: var(--bg-primary); }
+
+/* ───────── Scrollbar ───────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-primary); }
+::-webkit-scrollbar-thumb { background: var(--border-accent); border-radius: 3px; }
+
+/* ───────── Utility ───────── */
+.container { max-width: 1100px; margin: 0 auto; padding: 0 2rem; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+
+/* ───────── Grain Overlay ───────── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+}
+
+/* ───────── Hero ───────── */
+.hero {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+.hero-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 40%, rgba(0, 212, 255, 0.06) 0%, transparent 70%),
+    radial-gradient(ellipse 60% 50% at 20% 80%, rgba(255, 138, 0, 0.04) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 40% at 80% 20%, rgba(167, 139, 250, 0.04) 0%, transparent 60%);
+}
+.hero-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 60px 60px;
+  opacity: 0.15;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 50%, black 20%, transparent 70%);
+}
+.hero-content {
+  text-align: center;
+  position: relative;
+  z-index: 2;
+  animation: fadeUp 1s ease-out;
+}
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 1.2rem;
+  border: 1px solid var(--border-accent);
+  border-radius: 100px;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--accent-cyan);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 2rem;
+  background: var(--accent-cyan-dim);
+}
+.hero-badge::before {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent-cyan);
+  box-shadow: 0 0 8px var(--accent-cyan);
+  animation: pulse 2s infinite;
+}
+h1.hero-title {
+  font-family: var(--font-display);
+  font-size: clamp(3rem, 8vw, 6.5rem);
+  font-weight: 400;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  margin-bottom: 1.5rem;
+}
+h1.hero-title em {
+  font-style: italic;
+  color: var(--accent-cyan);
+  text-shadow: 0 0 40px rgba(0, 212, 255, 0.25);
+}
+.hero-sub {
+  font-size: 1.15rem;
+  color: var(--text-secondary);
+  max-width: 600px;
+  margin: 0 auto 2.5rem;
+  font-weight: 300;
+}
+.hero-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.8rem 2rem;
+  background: var(--accent-cyan);
+  color: var(--bg-primary);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-decoration: none;
+  border-radius: 8px;
+  letter-spacing: 0.03em;
+  transition: all 0.3s;
+  box-shadow: var(--glow-cyan);
+}
+.hero-cta:hover { transform: translateY(-2px); box-shadow: 0 0 50px rgba(0, 212, 255, 0.5); }
+.hero-cta svg { width: 16px; height: 16px; }
+
+/* ───────── Navigation ───────── */
+nav.toc {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(10, 10, 15, 0.85);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border);
+  padding: 0.8rem 0;
+}
+nav.toc .container {
+  display: flex;
+  gap: 0.3rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+nav.toc a {
+  flex-shrink: 0;
+  padding: 0.4rem 0.9rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  text-decoration: none;
+  border-radius: 6px;
+  transition: all 0.25s;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+nav.toc a:hover, nav.toc a.active { color: var(--accent-cyan); background: var(--accent-cyan-dim); }
+
+/* ───────── Sections ───────── */
+section {
+  padding: 6rem 0;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+section:last-of-type { border-bottom: none; }
+
+.section-label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.section-label .num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 0.75rem;
+}
+.section-label.cyan { color: var(--accent-cyan); }
+.section-label.cyan .num { background: var(--accent-cyan-dim); }
+.section-label.orange { color: var(--accent-orange); }
+.section-label.orange .num { background: var(--accent-orange-dim); }
+.section-label.green { color: var(--accent-green); }
+.section-label.green .num { background: var(--accent-green-dim); }
+.section-label.purple { color: var(--accent-purple); }
+.section-label.purple .num { background: var(--accent-purple-dim); }
+.section-label.red { color: var(--accent-red); }
+.section-label.red .num { background: var(--accent-red-dim); }
+.section-label.yellow { color: var(--accent-yellow); }
+.section-label.yellow .num { background: var(--accent-yellow-dim); }
+
+h2.section-title {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 4vw, 3.2rem);
+  font-weight: 400;
+  line-height: 1.15;
+  margin-bottom: 1.2rem;
+}
+.section-desc {
+  font-size: 1.05rem;
+  color: var(--text-secondary);
+  max-width: 700px;
+  margin-bottom: 3rem;
+  font-weight: 300;
+}
+
+/* ───────── Diagram containers ───────── */
+.diagram-wrapper {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 2.5rem;
+  margin: 2rem 0;
+  overflow: hidden;
+  position: relative;
+}
+.diagram-wrapper::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent-cyan), transparent);
+  opacity: 0.3;
+}
+
+/* ───────── SVG Diagrams ───────── */
+.diagram-svg {
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  display: block;
+}
+.diagram-svg text {
+  font-family: 'DM Sans', sans-serif;
+  fill: var(--text-primary);
+}
+.diagram-svg .label-mono {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  fill: var(--text-secondary);
+}
+.diagram-svg .label-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.diagram-svg .label-small {
+  font-size: 11px;
+  fill: var(--text-secondary);
+}
+
+/* ───────── Flow / Pipeline Steps ───────── */
+.pipeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  position: relative;
+  margin: 2rem 0;
+}
+.pipeline::before {
+  content: '';
+  position: absolute;
+  left: 22px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: linear-gradient(to bottom, var(--accent-cyan), var(--accent-orange), var(--accent-green));
+  opacity: 0.3;
+}
+.pipeline-step {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 1.5rem;
+  padding: 1.5rem 0;
+  position: relative;
+}
+.pipeline-dot {
+  width: 44px; height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
+}
+.pipeline-dot.cyan { background: var(--accent-cyan-dim); color: var(--accent-cyan); border: 1px solid rgba(0, 212, 255, 0.3); }
+.pipeline-dot.orange { background: var(--accent-orange-dim); color: var(--accent-orange); border: 1px solid rgba(255, 138, 0, 0.3); }
+.pipeline-dot.green { background: var(--accent-green-dim); color: var(--accent-green); border: 1px solid rgba(0, 232, 143, 0.3); }
+.pipeline-dot.purple { background: var(--accent-purple-dim); color: var(--accent-purple); border: 1px solid rgba(167, 139, 250, 0.3); }
+.pipeline-dot.red { background: var(--accent-red-dim); color: var(--accent-red); border: 1px solid rgba(255, 77, 106, 0.3); }
+.pipeline-dot.yellow { background: var(--accent-yellow-dim); color: var(--accent-yellow); border: 1px solid rgba(251, 191, 36, 0.3); }
+
+.pipeline-body h3 {
+  font-family: var(--font-body);
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+.pipeline-body p {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  margin-bottom: 0.75rem;
+}
+
+/* ───────── Code Blocks ───────── */
+.code-block {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.2rem 1.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.8;
+  overflow-x: auto;
+  margin: 1rem 0;
+  position: relative;
+}
+.code-block .code-label {
+  position: absolute;
+  top: 0; right: 0;
+  padding: 0.3rem 0.8rem;
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius: 0 10px 0 8px;
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+}
+.code-block .kw { color: var(--accent-purple); }
+.code-block .fn { color: var(--accent-cyan); }
+.code-block .str { color: var(--accent-green); }
+.code-block .cm { color: var(--text-dim); font-style: italic; }
+.code-block .op { color: var(--accent-orange); }
+.code-block .num { color: var(--accent-yellow); }
+
+/* ───────── Info Cards ───────── */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.2rem;
+  margin: 2rem 0;
+}
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  transition: all 0.3s;
+  position: relative;
+  overflow: hidden;
+}
+.card:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-accent);
+  transform: translateY(-2px);
+}
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+}
+.card.cyan::before { background: var(--accent-cyan); }
+.card.orange::before { background: var(--accent-orange); }
+.card.green::before { background: var(--accent-green); }
+.card.purple::before { background: var(--accent-purple); }
+.card.red::before { background: var(--accent-red); }
+.card.yellow::before { background: var(--accent-yellow); }
+
+.card-icon {
+  width: 40px; height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1rem;
+  font-size: 1.2rem;
+}
+.card-icon.cyan { background: var(--accent-cyan-dim); color: var(--accent-cyan); }
+.card-icon.orange { background: var(--accent-orange-dim); color: var(--accent-orange); }
+.card-icon.green { background: var(--accent-green-dim); color: var(--accent-green); }
+.card-icon.purple { background: var(--accent-purple-dim); color: var(--accent-purple); }
+.card-icon.red { background: var(--accent-red-dim); color: var(--accent-red); }
+.card-icon.yellow { background: var(--accent-yellow-dim); color: var(--accent-yellow); }
+
+.card h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+.card p {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  line-height: 1.65;
+}
+
+/* ───────── Callout ───────── */
+.callout {
+  border-left: 3px solid;
+  padding: 1.2rem 1.5rem;
+  border-radius: 0 10px 10px 0;
+  margin: 1.5rem 0;
+  font-size: 0.92rem;
+}
+.callout.cyan { border-color: var(--accent-cyan); background: var(--accent-cyan-dim); }
+.callout.orange { border-color: var(--accent-orange); background: var(--accent-orange-dim); }
+.callout.green { border-color: var(--accent-green); background: var(--accent-green-dim); }
+.callout.purple { border-color: var(--accent-purple); background: var(--accent-purple-dim); }
+.callout strong { color: var(--text-primary); }
+
+/* ───────── Interactive Diagram: Agent Loop ───────── */
+.agent-loop-diagram {
+  position: relative;
+  width: 100%;
+  max-width: 700px;
+  margin: 2rem auto;
+  aspect-ratio: 1 / 1;
+}
+.loop-node {
+  position: absolute;
+  width: 140px;
+  padding: 1rem;
+  text-align: center;
+  border-radius: 14px;
+  border: 2px solid;
+  font-size: 0.82rem;
+  font-weight: 600;
+  transition: all 0.4s;
+  cursor: default;
+  z-index: 2;
+}
+.loop-node:hover { transform: scale(1.08); z-index: 3; }
+.loop-node .node-icon { font-size: 1.5rem; margin-bottom: 0.4rem; }
+.loop-node .node-label { font-family: var(--font-mono); font-size: 0.7rem; margin-top: 0.3rem; opacity: 0.7; }
+
+.loop-node.n-perceive { top: 2%; left: 50%; transform: translateX(-50%); background: var(--accent-cyan-dim); border-color: rgba(0, 212, 255, 0.4); color: var(--accent-cyan); }
+.loop-node.n-reason { top: 30%; right: 2%; background: var(--accent-purple-dim); border-color: rgba(167, 139, 250, 0.4); color: var(--accent-purple); }
+.loop-node.n-plan { bottom: 30%; right: 2%; background: var(--accent-orange-dim); border-color: rgba(255, 138, 0, 0.4); color: var(--accent-orange); }
+.loop-node.n-act { bottom: 2%; left: 50%; transform: translateX(-50%); background: var(--accent-green-dim); border-color: rgba(0, 232, 143, 0.4); color: var(--accent-green); }
+.loop-node.n-observe { bottom: 30%; left: 2%; background: var(--accent-yellow-dim); border-color: rgba(251, 191, 36, 0.4); color: var(--accent-yellow); }
+.loop-node.n-update { top: 30%; left: 2%; background: var(--accent-red-dim); border-color: rgba(255, 77, 106, 0.4); color: var(--accent-red); }
+
+.loop-center {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  z-index: 1;
+}
+.loop-center .ring {
+  width: 160px; height: 160px;
+  border: 2px dashed var(--border-accent);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: spinSlow 30s linear infinite;
+}
+.loop-center .ring-inner {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  animation: spinSlow 30s linear infinite reverse;
+}
+
+/* ───────── Animated Token Flow ───────── */
+.token-flow {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  padding: 1.5rem;
+  background: var(--bg-primary);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  margin: 1.5rem 0;
+  min-height: 60px;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+.token {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  opacity: 0;
+  animation: tokenAppear 0.3s forwards;
+  white-space: nowrap;
+}
+.token.thought { background: var(--accent-purple-dim); color: var(--accent-purple); }
+.token.action { background: var(--accent-orange-dim); color: var(--accent-orange); }
+.token.tool { background: var(--accent-cyan-dim); color: var(--accent-cyan); }
+.token.result { background: var(--accent-green-dim); color: var(--accent-green); }
+.token.plain { color: var(--text-secondary); }
+
+/* ───────── Comparison Table ───────── */
+.comparison-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  margin: 2rem 0;
+  font-size: 0.88rem;
+}
+.comparison-table th {
+  background: var(--bg-card);
+  padding: 1rem 1.2rem;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+}
+.comparison-table td {
+  padding: 0.9rem 1.2rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+.comparison-table tr:last-child td { border-bottom: none; }
+.comparison-table tr:hover td { background: var(--bg-card); }
+
+/* ───────── Memory Diagram ───────── */
+.memory-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 500px;
+  margin: 1.5rem auto;
+}
+.memory-slot {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.8rem 1.2rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  font-size: 0.85rem;
+  transition: all 0.3s;
+}
+.memory-slot:hover { border-color: var(--border-accent); background: var(--bg-card); }
+.memory-slot .slot-type {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  flex-shrink: 0;
+  width: 90px;
+  text-align: center;
+}
+.memory-slot .slot-type.sys { background: var(--accent-purple-dim); color: var(--accent-purple); }
+.memory-slot .slot-type.user { background: var(--accent-cyan-dim); color: var(--accent-cyan); }
+.memory-slot .slot-type.asst { background: var(--accent-green-dim); color: var(--accent-green); }
+.memory-slot .slot-type.tool-r { background: var(--accent-orange-dim); color: var(--accent-orange); }
+.memory-slot .slot-content { color: var(--text-secondary); }
+
+/* ───────── Interactive Demo ───────── */
+.demo-controls {
+  display: flex;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+}
+.demo-btn {
+  padding: 0.5rem 1.2rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.25s;
+  letter-spacing: 0.03em;
+}
+.demo-btn:hover { border-color: var(--accent-cyan); color: var(--accent-cyan); background: var(--accent-cyan-dim); }
+.demo-btn.active { border-color: var(--accent-cyan); color: var(--accent-cyan); background: var(--accent-cyan-dim); }
+
+.demo-output {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  min-height: 200px;
+  position: relative;
+  overflow: hidden;
+}
+.demo-output::before {
+  content: 'LIVE TRACE';
+  position: absolute;
+  top: 0.8rem; right: 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.15em;
+  color: var(--accent-green);
+  opacity: 0.6;
+}
+.trace-line {
+  display: flex;
+  gap: 0.8rem;
+  padding: 0.35rem 0;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.6;
+  opacity: 0;
+  transform: translateY(5px);
+  animation: traceIn 0.3s forwards;
+}
+.trace-tag {
+  flex-shrink: 0;
+  width: 70px;
+  text-align: right;
+  font-weight: 600;
+  font-size: 0.7rem;
+  padding-top: 2px;
+}
+.trace-tag.thought { color: var(--accent-purple); }
+.trace-tag.action { color: var(--accent-orange); }
+.trace-tag.tool { color: var(--accent-cyan); }
+.trace-tag.result { color: var(--accent-green); }
+.trace-tag.final { color: var(--accent-yellow); }
+.trace-msg { color: var(--text-secondary); }
+
+/* ───────── Footer ───────── */
+footer {
+  padding: 3rem 0;
+  text-align: center;
+  border-top: 1px solid var(--border);
+}
+footer p {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+/* ───────── Animations ───────── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+@keyframes spinSlow {
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+@keyframes tokenAppear {
+  from { opacity: 0; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes traceIn {
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes flowPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+/* Scroll reveal */
+.reveal {
+  opacity: 0;
+  transform: translateY(40px);
+  transition: all 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ───────── Responsive ───────── */
+@media (max-width: 768px) {
+  .container { padding: 0 1.2rem; }
+  section { padding: 4rem 0; }
+  .diagram-wrapper { padding: 1.5rem; }
+  .agent-loop-diagram { aspect-ratio: auto; min-height: 520px; }
+  .loop-node { width: 110px; padding: 0.7rem; font-size: 0.72rem; }
+  .card-grid { grid-template-columns: 1fr; }
+  .pipeline-step { grid-template-columns: 36px 1fr; gap: 1rem; }
+  .pipeline-dot { width: 36px; height: 36px; font-size: 0.65rem; }
+  nav.toc .container { gap: 0.1rem; }
+  .comparison-table { font-size: 0.78rem; }
+  .comparison-table th, .comparison-table td { padding: 0.7rem; }
+}
+
+/* ───────── Architecture Flow (Horizontal) ───────── */
+.arch-flow {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  margin: 2rem 0;
+  overflow-x: auto;
+  padding-bottom: 1rem;
+}
+.arch-block {
+  flex: 1;
+  min-width: 150px;
+  padding: 1.2rem;
+  text-align: center;
+  border: 1px solid var(--border);
+  position: relative;
+}
+.arch-block:first-child { border-radius: 12px 0 0 12px; }
+.arch-block:last-child { border-radius: 0 12px 12px 0; }
+.arch-block:not(:last-child)::after {
+  content: '→';
+  position: absolute;
+  right: -12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.2rem;
+  z-index: 2;
+  width: 24px;
+  text-align: center;
+}
+.arch-block .ab-icon { font-size: 1.5rem; margin-bottom: 0.5rem; }
+.arch-block .ab-title {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.3rem;
+}
+.arch-block .ab-desc {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+.arch-block.c-cyan { background: var(--accent-cyan-dim); }
+.arch-block.c-cyan::after { color: var(--accent-cyan); }
+.arch-block.c-orange { background: var(--accent-orange-dim); }
+.arch-block.c-orange::after { color: var(--accent-orange); }
+.arch-block.c-purple { background: var(--accent-purple-dim); }
+.arch-block.c-purple::after { color: var(--accent-purple); }
+.arch-block.c-green { background: var(--accent-green-dim); }
+.arch-block.c-green::after { color: var(--accent-green); }
+.arch-block.c-red { background: var(--accent-red-dim); }
+.arch-block.c-red::after { color: var(--accent-red); }
+.arch-block.c-yellow { background: var(--accent-yellow-dim); }
+
+/* ───────── Tool Anatomy ───────── */
+.tool-anatomy {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin: 2rem 0;
+}
+@media (max-width: 768px) { .tool-anatomy { grid-template-columns: 1fr; } }
+.tool-box {
+  padding: 1.5rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+}
+.tool-box h4 {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  margin-bottom: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.tool-box p {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  line-height: 1.65;
+}
+
+/* Prose styling within sections */
+.prose { max-width: 750px; }
+.prose p { margin-bottom: 1rem; color: var(--text-secondary); font-size: 0.95rem; }
+.prose strong { color: var(--text-primary); font-weight: 600; }
+.inline-code {
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  background: var(--bg-card);
+  padding: 0.15em 0.45em;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--accent-cyan);
+}
+</style>
+</head>
+
+<body>
+
+<!-- ======================= HERO ======================= -->
+<header class="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-grid"></div>
+  <div class="hero-content">
+    <div class="hero-badge">Visual Technical Guide</div>
+    <h1 class="hero-title">How LLM <em>Agents</em> Work</h1>
+    <p class="hero-sub">A comprehensive visual breakdown of every operation inside an LLM-powered agent — from tokenization to tool execution to memory management.</p>
+    <a href="#overview" class="hero-cta">
+      Begin the Deep Dive
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+    </a>
+  </div>
+</header>
+
+<!-- ======================= NAV ======================= -->
+<nav class="toc" id="toc">
+  <div class="container">
+    <a href="#overview">Overview</a>
+    <a href="#anatomy">Anatomy</a>
+    <a href="#loop">Agent Loop</a>
+    <a href="#prompting">Prompt Assembly</a>
+    <a href="#reasoning">Reasoning</a>
+    <a href="#tools">Tool Use</a>
+    <a href="#memory">Memory</a>
+    <a href="#planning">Planning</a>
+    <a href="#patterns">Patterns</a>
+    <a href="#multi-agent">Multi-Agent</a>
+    <a href="#demo">Live Demo</a>
+  </div>
+</nav>
+
+<!-- ======================= 01: OVERVIEW ======================= -->
+<section id="overview">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label cyan"><span class="num">01</span> OVERVIEW</div>
+      <h2 class="section-title">What is an LLM Agent?</h2>
+      <div class="prose">
+        <p>An LLM agent is a system that uses a large language model as its core reasoning engine, augmented with the ability to <strong>perceive its environment</strong>, <strong>make decisions</strong>, <strong>execute actions</strong> via external tools, and <strong>learn from observations</strong> — all within an autonomous loop.</p>
+        <p>Unlike a simple chatbot that produces one response per input, an agent can <strong>take multiple steps</strong> to accomplish complex goals. It decides what to do, calls external APIs or tools, reads the results, adjusts its plan, and continues until the task is complete.</p>
+      </div>
+    </div>
+
+    <div class="reveal">
+      <div class="diagram-wrapper">
+        <div style="text-align:center; margin-bottom:1.5rem;">
+          <span style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-dim);letter-spacing:0.1em;">HIGH-LEVEL ARCHITECTURE</span>
+        </div>
+        <div class="arch-flow">
+          <div class="arch-block c-cyan">
+            <div class="ab-icon">👤</div>
+            <div class="ab-title">User Input</div>
+            <div class="ab-desc">Natural language task or query</div>
+          </div>
+          <div class="arch-block c-purple">
+            <div class="ab-icon">🧠</div>
+            <div class="ab-title">LLM Core</div>
+            <div class="ab-desc">Reasoning & decision engine</div>
+          </div>
+          <div class="arch-block c-orange">
+            <div class="ab-icon">⚡</div>
+            <div class="ab-title">Action Selection</div>
+            <div class="ab-desc">Choose tool & parameters</div>
+          </div>
+          <div class="arch-block c-green">
+            <div class="ab-icon">🔧</div>
+            <div class="ab-title">Tool Execution</div>
+            <div class="ab-desc">APIs, code, search, etc.</div>
+          </div>
+          <div class="arch-block c-red">
+            <div class="ab-icon">👁</div>
+            <div class="ab-title">Observation</div>
+            <div class="ab-desc">Parse & interpret results</div>
+          </div>
+          <div class="arch-block c-yellow">
+            <div class="ab-icon">✅</div>
+            <div class="ab-title">Response</div>
+            <div class="ab-desc">Final answer or next loop</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="reveal">
+      <table class="comparison-table">
+        <thead>
+          <tr>
+            <th>Capability</th>
+            <th>Plain LLM</th>
+            <th>LLM Agent</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Interaction</strong></td>
+            <td>Single turn: input → output</td>
+            <td>Multi-step autonomous loop</td>
+          </tr>
+          <tr>
+            <td><strong>World Access</strong></td>
+            <td>None — text in, text out</td>
+            <td>Tools, APIs, file systems, databases</td>
+          </tr>
+          <tr>
+            <td><strong>Memory</strong></td>
+            <td>Context window only</td>
+            <td>Short-term + long-term retrieval stores</td>
+          </tr>
+          <tr>
+            <td><strong>Planning</strong></td>
+            <td>Implicit in single generation</td>
+            <td>Explicit multi-step reasoning & replanning</td>
+          </tr>
+          <tr>
+            <td><strong>Error Recovery</strong></td>
+            <td>Cannot self-correct</td>
+            <td>Observes failures, retries, adjusts approach</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 02: ANATOMY ======================= -->
+<section id="anatomy">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label orange"><span class="num">02</span> ANATOMY</div>
+      <h2 class="section-title">The Five Core Components</h2>
+      <p class="section-desc">Every LLM agent, regardless of framework, is built from five fundamental components working in concert.</p>
+    </div>
+
+    <div class="card-grid reveal">
+      <div class="card cyan">
+        <div class="card-icon cyan">🧠</div>
+        <h4>LLM Core (The Brain)</h4>
+        <p>The foundation model (GPT-4, Claude, Llama, etc.) that generates text, reasons over context, and produces structured outputs. All agent intelligence flows through this component. The model processes a carefully constructed prompt and returns either a final answer or a structured action request.</p>
+      </div>
+      <div class="card orange">
+        <div class="card-icon orange">🔧</div>
+        <h4>Tools (The Hands)</h4>
+        <p>External functions the agent can invoke: web search, code execution, database queries, API calls, file operations. Each tool has a name, description, and parameter schema that the LLM uses to decide when and how to call it.</p>
+      </div>
+      <div class="card purple">
+        <div class="card-icon purple">📋</div>
+        <h4>Planner (The Strategist)</h4>
+        <p>The reasoning mechanism that decomposes complex tasks into ordered sub-steps. This might be explicit (a generated task list) or implicit (chain-of-thought reasoning within the LLM's generation). The planner also decides when to re-plan based on new observations.</p>
+      </div>
+      <div class="card green">
+        <div class="card-icon green">💾</div>
+        <h4>Memory (The Recall)</h4>
+        <p>State management across agent steps. Short-term memory is the conversation/context window. Long-term memory uses vector databases or key-value stores for persistent knowledge retrieval. Working memory holds the current plan and intermediate results.</p>
+      </div>
+      <div class="card red">
+        <div class="card-icon red">🔄</div>
+        <h4>Orchestrator (The Loop)</h4>
+        <p>The runtime that wires everything together. It manages the observe-think-act cycle, routes LLM outputs to tool execution, feeds results back, handles errors, enforces token budgets, and decides when to terminate. This is the "agentic scaffold."</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 03: AGENT LOOP ======================= -->
+<section id="loop">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label green"><span class="num">03</span> THE AGENT LOOP</div>
+      <h2 class="section-title">The Core Execution Cycle</h2>
+      <p class="section-desc">Every agent step follows the same fundamental cycle. The loop runs until the agent decides to stop (produces a final answer) or hits a configured maximum iteration limit.</p>
+    </div>
+
+    <div class="diagram-wrapper reveal">
+      <div class="agent-loop-diagram">
+        <div class="loop-node n-perceive">
+          <div class="node-icon">👁</div>
+          Perceive
+          <div class="node-label">Parse input</div>
+        </div>
+        <div class="loop-node n-reason">
+          <div class="node-icon">💭</div>
+          Reason
+          <div class="node-label">Think step</div>
+        </div>
+        <div class="loop-node n-plan">
+          <div class="node-icon">📋</div>
+          Plan
+          <div class="node-label">Pick action</div>
+        </div>
+        <div class="loop-node n-act">
+          <div class="node-icon">⚡</div>
+          Act
+          <div class="node-label">Execute tool</div>
+        </div>
+        <div class="loop-node n-observe">
+          <div class="node-icon">🔍</div>
+          Observe
+          <div class="node-label">Read result</div>
+        </div>
+        <div class="loop-node n-update">
+          <div class="node-icon">🔄</div>
+          Update
+          <div class="node-label">Revise state</div>
+        </div>
+        <div class="loop-center">
+          <div class="ring">
+            <div class="ring-inner">Agent Loop</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="reveal">
+      <div class="pipeline">
+        <div class="pipeline-step">
+          <div class="pipeline-dot cyan">1</div>
+          <div class="pipeline-body">
+            <h3>Perceive — Parse the Input</h3>
+            <p>The orchestrator assembles the full context: system prompt, tool definitions, conversation history, and the current user message (or previous tool result). This entire payload is tokenized and sent to the LLM. The perception step is where <strong>prompt engineering</strong> happens — the quality of what the agent "sees" determines everything downstream.</p>
+          </div>
+        </div>
+        <div class="pipeline-step">
+          <div class="pipeline-dot purple">2</div>
+          <div class="pipeline-body">
+            <h3>Reason — Think About What to Do</h3>
+            <p>The LLM generates internal reasoning (often called "chain-of-thought" or a "scratchpad"). In ReAct-style agents, this is an explicit <span class="inline-code">Thought:</span> field. The model considers what it knows, what it needs, and what tools are available. This is pure text generation — the model is literally <strong>writing out its thinking process</strong>.</p>
+          </div>
+        </div>
+        <div class="pipeline-step">
+          <div class="pipeline-dot orange">3</div>
+          <div class="pipeline-body">
+            <h3>Plan — Select an Action</h3>
+            <p>Based on its reasoning, the model outputs a structured action: a tool name and its parameters (typically JSON). If no tool is needed, it outputs a <span class="inline-code">finish</span> action with the final answer. The action format is defined in the system prompt and the model must follow the schema exactly for the orchestrator to parse it.</p>
+          </div>
+        </div>
+        <div class="pipeline-step">
+          <div class="pipeline-dot green">4</div>
+          <div class="pipeline-body">
+            <h3>Act — Execute the Tool</h3>
+            <p>The orchestrator parses the LLM's output, validates the action, and dispatches it to the appropriate tool. This is <strong>real code execution</strong> — an HTTP request, a database query, a file read, a calculator. The agent's "hands" touch the real world here. Errors are caught and formatted as results.</p>
+          </div>
+        </div>
+        <div class="pipeline-step">
+          <div class="pipeline-dot yellow">5</div>
+          <div class="pipeline-body">
+            <h3>Observe — Read the Result</h3>
+            <p>The tool's output is formatted and appended to the conversation history as an "observation." The agent now sees both its action and the result. This creates the feedback loop — the agent can evaluate whether its action succeeded, failed, or returned unexpected data.</p>
+          </div>
+        </div>
+        <div class="pipeline-step">
+          <div class="pipeline-dot red">6</div>
+          <div class="pipeline-body">
+            <h3>Update — Revise State & Loop</h3>
+            <p>The orchestrator updates working memory, checks termination conditions (max iterations, final answer detected, error budget exhausted), and either <strong>loops back to step 1</strong> with the expanded context or <strong>returns the final answer</strong> to the user. The conversation history grows with each loop iteration.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 04: PROMPT ASSEMBLY ======================= -->
+<section id="prompting">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label purple"><span class="num">04</span> PROMPT ASSEMBLY</div>
+      <h2 class="section-title">How the Prompt is Built</h2>
+      <p class="section-desc">Before every LLM call, the orchestrator assembles a structured prompt. The exact content of this prompt is what gives the agent its personality, capabilities, and constraints. Here's the anatomy of a typical agent prompt.</p>
+    </div>
+
+    <div class="reveal">
+      <div class="memory-stack">
+        <div class="memory-slot">
+          <div class="slot-type sys">SYSTEM</div>
+          <div class="slot-content">Identity, personality, rules, and instructions for the agent's behavior and constraints.</div>
+        </div>
+        <div class="memory-slot">
+          <div class="slot-type sys">TOOLS</div>
+          <div class="slot-content">JSON schema definitions of every available tool — name, description, parameter types.</div>
+        </div>
+        <div class="memory-slot">
+          <div class="slot-type sys">FORMAT</div>
+          <div class="slot-content">Output format instructions: how to emit thoughts, actions, and final answers.</div>
+        </div>
+        <div class="memory-slot">
+          <div class="slot-type sys">EXAMPLES</div>
+          <div class="slot-content">Few-shot examples demonstrating the Thought → Action → Observation pattern.</div>
+        </div>
+        <div class="memory-slot" style="border-left: 3px solid var(--accent-cyan);">
+          <div class="slot-type user">USER</div>
+          <div class="slot-content">"What was Apple's revenue last quarter?"</div>
+        </div>
+        <div class="memory-slot" style="border-left: 3px solid var(--accent-green);">
+          <div class="slot-type asst">ASSISTANT</div>
+          <div class="slot-content"><strong>Thought:</strong> I need to search for Apple's latest earnings report...</div>
+        </div>
+        <div class="memory-slot" style="border-left: 3px solid var(--accent-orange);">
+          <div class="slot-type tool-r">TOOL RESULT</div>
+          <div class="slot-content">{"revenue": "$94.9B", "quarter": "Q1 2025", "source": "Apple IR"}</div>
+        </div>
+        <div class="memory-slot" style="border-left: 3px solid var(--accent-green);">
+          <div class="slot-type asst">ASSISTANT</div>
+          <div class="slot-content"><strong>Thought:</strong> I have the data. I can now answer the user. <strong>Final Answer:</strong> ...</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="reveal">
+      <div class="callout cyan">
+        <strong>Key insight:</strong> The conversation history grows with every loop iteration. Each Thought, Action, Observation triple is appended. This is why agents consume tokens rapidly — after 5 tool calls, the context may contain thousands of tokens of accumulated reasoning and results.
+      </div>
+    </div>
+
+    <div class="reveal">
+      <div class="code-block">
+        <div class="code-label" style="background:var(--accent-purple-dim);color:var(--accent-purple);">System Prompt (Simplified)</div>
+<pre>
+<span class="cm">// System prompt structure for a ReAct agent</span>
+
+<span class="str">You are a helpful research assistant with access to tools.
+
+Available tools:
+- web_search(query: string) → Search the web
+- calculator(expression: string) → Evaluate math
+- get_weather(city: string) → Current weather data
+
+For each step, output your reasoning then an action:
+
+Thought: [your reasoning about what to do next]
+Action: {"tool": "tool_name", "params": {...}}
+
+After receiving a tool result, reason about it and either
+call another tool or provide your final answer:
+
+Thought: [reasoning about the result]
+Final Answer: [your response to the user]</span>
+</pre>
+      </div>
+    </div>
+
+    <div class="reveal">
+      <div class="prose">
+        <p><strong>Tool definitions are critical.</strong> The LLM reads the tool descriptions and parameter schemas to understand what each tool does and when to use it. Poorly written tool descriptions lead to misuse — the model might call the wrong tool or pass incorrect parameters. Each tool definition typically includes the tool name, a natural language description of its purpose, a JSON Schema for parameters (with types, required fields, and descriptions), and a description of what the return value looks like.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 05: REASONING ======================= -->
+<section id="reasoning">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label red"><span class="num">05</span> REASONING ENGINE</div>
+      <h2 class="section-title">How Agents Think</h2>
+      <p class="section-desc">The reasoning step is where intelligence happens. The LLM generates text that represents its internal deliberation. Different agent frameworks structure this differently.</p>
+    </div>
+
+    <div class="card-grid reveal">
+      <div class="card cyan">
+        <div class="card-icon cyan">🔗</div>
+        <h4>Chain-of-Thought (CoT)</h4>
+        <p>The model is prompted to "think step by step." It generates sequential reasoning before producing an answer. This improves accuracy on complex tasks by forcing intermediate computation steps. In agents, CoT happens within the "Thought" field at each loop iteration.</p>
+      </div>
+      <div class="card orange">
+        <div class="card-icon orange">⚛</div>
+        <h4>ReAct (Reason + Act)</h4>
+        <p>The canonical agent pattern. Each step alternates between <strong>Reasoning</strong> (a thought explaining what to do and why) and <strong>Acting</strong> (a tool call). The observation from the action feeds into the next reasoning step. This interleaving grounds reasoning in real data.</p>
+      </div>
+      <div class="card purple">
+        <div class="card-icon purple">🌳</div>
+        <h4>Tree-of-Thought (ToT)</h4>
+        <p>For especially hard problems, the agent explores multiple reasoning paths in parallel (branching), evaluates each path's promise, and prunes unpromising branches. This is more expensive (multiple LLM calls per step) but dramatically improves performance on tasks requiring search or backtracking.</p>
+      </div>
+      <div class="card green">
+        <div class="card-icon green">🔄</div>
+        <h4>Reflexion</h4>
+        <p>After completing a task (or failing), the agent generates a self-critique: what went wrong, what could be improved, and what to try differently. This reflection is stored in long-term memory and retrieved on similar future tasks, creating a learning loop across episodes.</p>
+      </div>
+    </div>
+
+    <div class="reveal">
+      <div class="diagram-wrapper">
+        <div style="text-align:center; margin-bottom:1.5rem;">
+          <span style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-dim);letter-spacing:0.1em;">ReAct EXECUTION TRACE</span>
+        </div>
+        <div class="token-flow" id="react-trace">
+          <!-- Filled by JS -->
+        </div>
+      </div>
+    </div>
+
+    <div class="reveal">
+      <div class="callout orange">
+        <strong>Why reasoning matters:</strong> Without explicit reasoning steps, models tend to "jump to answers" — often incorrectly. The Thought field forces the model to articulate its plan before acting, dramatically reducing errors. Research shows that ReAct agents outperform pure CoT and pure action-only approaches on knowledge-intensive tasks.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 06: TOOL USE ======================= -->
+<section id="tools">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label yellow"><span class="num">06</span> TOOL USE</div>
+      <h2 class="section-title">Calling External Tools</h2>
+      <p class="section-desc">Tools are what transform an LLM from a text generator into an agent that can affect the real world. Here's exactly how a tool call works, step by step.</p>
+    </div>
+
+    <div class="reveal">
+      <div class="pipeline">
+        <div class="pipeline-step">
+          <div class="pipeline-dot purple">A</div>
+          <div class="pipeline-body">
+            <h3>LLM Generates Structured Output</h3>
+            <p>The model outputs a JSON object (or specially formatted text) specifying which tool to call and what parameters to pass. Modern APIs (OpenAI function calling, Anthropic tool use) provide native structured output modes where the model's generation is constrained to valid JSON matching a tool's schema.</p>
+            <div class="code-block">
+<pre><span class="cm">// LLM output (structured tool call)</span>
+{
+  <span class="str">"tool"</span>: <span class="str">"web_search"</span>,
+  <span class="str">"parameters"</span>: {
+    <span class="str">"query"</span>: <span class="str">"Apple Q1 2025 revenue earnings report"</span>
+  }
+}</pre>
+            </div>
+          </div>
+        </div>
+        <div class="pipeline-step">
+          <div class="pipeline-dot orange">B</div>
+          <div class="pipeline-body">
+            <h3>Orchestrator Parses & Validates</h3>
+            <p>The agent framework extracts the tool name and parameters from the LLM's output. It validates against the tool's schema: are required parameters present? Are types correct? Is this tool actually available? If validation fails, the error is formatted as an observation and sent back to the LLM so it can try again.</p>
+          </div>
+        </div>
+        <div class="pipeline-step">
+          <div class="pipeline-dot green">C</div>
+          <div class="pipeline-body">
+            <h3>Tool Function Executes</h3>
+            <p>The validated parameters are passed to the actual tool implementation — a Python function, an HTTP endpoint, a shell command. This is real-world execution: network requests fire, databases are queried, code runs. The tool returns a result (string, JSON, or error).</p>
+            <div class="code-block">
+<pre><span class="cm">// Tool execution (server-side)</span>
+<span class="kw">async function</span> <span class="fn">web_search</span>(params) {
+  <span class="kw">const</span> results = <span class="kw">await</span> <span class="fn">searchAPI</span>(params.query);
+  <span class="kw">return</span> {
+    results: results.<span class="fn">map</span>(r => ({
+      title: r.title,
+      snippet: r.snippet,
+      url: r.url
+    }))
+  };
+}</pre>
+            </div>
+          </div>
+        </div>
+        <div class="pipeline-step">
+          <div class="pipeline-dot cyan">D</div>
+          <div class="pipeline-body">
+            <h3>Result Formatted as Observation</h3>
+            <p>The tool's return value is serialized to text and injected into the conversation as an <span class="inline-code">Observation:</span> or <span class="inline-code">tool_result</span> message. The LLM will see this on its next generation step. Results are often truncated or summarized to fit within token budgets.</p>
+          </div>
+        </div>
+        <div class="pipeline-step">
+          <div class="pipeline-dot yellow">E</div>
+          <div class="pipeline-body">
+            <h3>LLM Reasons Over Result</h3>
+            <p>The context now contains the original question, the tool call, and the observation. The LLM generates a new Thought — interpreting the result, deciding if it's sufficient, and either producing a final answer or selecting another tool call. The loop continues.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="reveal">
+      <h3 style="margin-bottom:1rem; font-size:1.1rem;">Common Tool Categories</h3>
+      <div class="tool-anatomy">
+        <div class="tool-box">
+          <h4 style="color:var(--accent-cyan);">🔍 Information Retrieval</h4>
+          <p>Web search, document search (RAG), database queries, API data fetching. These tools extend the agent's knowledge beyond its training data and provide real-time information.</p>
+        </div>
+        <div class="tool-box">
+          <h4 style="color:var(--accent-orange);">💻 Code Execution</h4>
+          <p>Python/JS interpreters, shell commands, sandboxed compute environments. Allow the agent to run calculations, process data, generate files, and perform operations that require exact computation.</p>
+        </div>
+        <div class="tool-box">
+          <h4 style="color:var(--accent-green);">📝 Content Creation</h4>
+          <p>File writers, image generators (DALL-E, Stable Diffusion), document formatters. These tools let agents produce artifacts beyond text — images, PDFs, spreadsheets, code files.</p>
+        </div>
+        <div class="tool-box">
+          <h4 style="color:var(--accent-purple);">🌐 External Actions</h4>
+          <p>Email sending, calendar management, Slack messaging, GitHub operations. These "actuator" tools let agents perform real-world actions on behalf of users, requiring careful permission models.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 07: MEMORY ======================= -->
+<section id="memory">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label cyan"><span class="num">07</span> MEMORY SYSTEMS</div>
+      <h2 class="section-title">How Agents Remember</h2>
+      <p class="section-desc">Memory is what allows agents to maintain coherence across steps and sessions. There are three distinct memory systems, each solving a different temporal problem.</p>
+    </div>
+
+    <div class="card-grid reveal">
+      <div class="card cyan">
+        <div class="card-icon cyan">⚡</div>
+        <h4>Working Memory (Context Window)</h4>
+        <p>The current conversation: system prompt + message history + tool results. This is the LLM's "RAM" — everything it can attend to right now. Limited by context window size (4K–200K tokens). As the agent loops, this grows and may require summarization or truncation to stay within limits.</p>
+      </div>
+      <div class="card orange">
+        <div class="card-icon orange">📓</div>
+        <h4>Short-Term Memory (Scratchpad)</h4>
+        <p>Structured state maintained by the orchestrator outside the LLM: the current plan, completed sub-tasks, intermediate results, and error counts. This is typically a data structure in the agent framework that gets serialized into the context when needed. It allows the agent to track progress without consuming context for bookkeeping.</p>
+      </div>
+      <div class="card green">
+        <div class="card-icon green">🗄</div>
+        <h4>Long-Term Memory (Vector Store)</h4>
+        <p>Persistent knowledge stored in external databases (Pinecone, Chroma, pgvector). Text is embedded into vectors and retrieved via semantic similarity search. This allows agents to recall information from past conversations, reference documents, or retrieve their own past reflections. Retrieval-Augmented Generation (RAG) is the core pattern here.</p>
+      </div>
+    </div>
+
+    <div class="diagram-wrapper reveal">
+      <div style="text-align:center; margin-bottom:1.5rem;">
+        <span style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-dim);letter-spacing:0.1em;">MEMORY RETRIEVAL FLOW (RAG)</span>
+      </div>
+      <div class="arch-flow">
+        <div class="arch-block c-cyan">
+          <div class="ab-icon">💬</div>
+          <div class="ab-title">User Query</div>
+          <div class="ab-desc">"What did we discuss about pricing?"</div>
+        </div>
+        <div class="arch-block c-purple">
+          <div class="ab-icon">🔢</div>
+          <div class="ab-title">Embed</div>
+          <div class="ab-desc">Query → vector [0.12, -0.8, ...]</div>
+        </div>
+        <div class="arch-block c-orange">
+          <div class="ab-icon">🔎</div>
+          <div class="ab-title">Search</div>
+          <div class="ab-desc">Cosine similarity over stored vectors</div>
+        </div>
+        <div class="arch-block c-green">
+          <div class="ab-icon">📄</div>
+          <div class="ab-title">Retrieve</div>
+          <div class="ab-desc">Top-K relevant chunks returned</div>
+        </div>
+        <div class="arch-block c-yellow">
+          <div class="ab-icon">🧠</div>
+          <div class="ab-title">Augment</div>
+          <div class="ab-desc">Chunks injected into LLM prompt</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="reveal">
+      <div class="callout purple">
+        <strong>Context window management</strong> is one of the hardest engineering problems in agent systems. After several tool calls, the context can easily exceed limits. Strategies include: sliding window (drop oldest messages), summarization (LLM-generated summaries of past turns), selective retrieval (only inject relevant memories), and hierarchical memory (summarize at multiple levels of granularity).
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 08: PLANNING ======================= -->
+<section id="planning">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label orange"><span class="num">08</span> PLANNING</div>
+      <h2 class="section-title">Decomposing Complex Tasks</h2>
+      <p class="section-desc">When an agent receives a complex request, it must break it down into manageable sub-tasks. Planning is the mechanism that makes agents capable of handling multi-step goals.</p>
+    </div>
+
+    <div class="reveal">
+      <div class="pipeline">
+        <div class="pipeline-step">
+          <div class="pipeline-dot cyan">1</div>
+          <div class="pipeline-body">
+            <h3>Task Decomposition</h3>
+            <p>The agent receives a high-level goal like <em>"Research competitor pricing, create a comparison spreadsheet, and draft an email summary for the team."</em> The planner breaks this into discrete, ordered sub-tasks: (1) Search for competitor pricing data, (2) structure data into a table, (3) create the spreadsheet file, (4) draft the email. Each sub-task can be mapped to specific tool calls.</p>
+          </div>
+        </div>
+        <div class="pipeline-step">
+          <div class="pipeline-dot purple">2</div>
+          <div class="pipeline-body">
+            <h3>Dependency Analysis</h3>
+            <p>The planner identifies which sub-tasks depend on others. The spreadsheet can't be created before data is collected. The email can't be drafted before the spreadsheet exists. Independent tasks (e.g., looking up two different competitors) can potentially execute in parallel.</p>
+          </div>
+        </div>
+        <div class="pipeline-step">
+          <div class="pipeline-dot orange">3</div>
+          <div class="pipeline-body">
+            <h3>Execution & Monitoring</h3>
+            <p>The agent executes sub-tasks in order, checking off completed items and noting results. After each sub-task, it evaluates: did this succeed? Is the result sufficient? Do I need to adjust the plan? This is <strong>dynamic replanning</strong> — the plan evolves based on real observations.</p>
+          </div>
+        </div>
+        <div class="pipeline-step">
+          <div class="pipeline-dot green">4</div>
+          <div class="pipeline-body">
+            <h3>Adaptive Replanning</h3>
+            <p>If a sub-task fails (search returns no results, API errors, unexpected data format), the planner generates an alternative approach: try a different search query, use a different tool, break the sub-task further, or adjust the overall strategy. This resilience is what makes agents useful in unpredictable environments.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="reveal">
+      <div class="code-block">
+        <div class="code-label" style="background:var(--accent-orange-dim);color:var(--accent-orange);">Generated Plan</div>
+<pre>
+<span class="cm">// Agent-generated plan (emitted as structured output)</span>
+{
+  <span class="str">"goal"</span>: <span class="str">"Compare competitor pricing and brief the team"</span>,
+  <span class="str">"steps"</span>: [
+    {<span class="str">"id"</span>: <span class="num">1</span>, <span class="str">"task"</span>: <span class="str">"Search competitor A pricing"</span>, <span class="str">"tool"</span>: <span class="str">"web_search"</span>, <span class="str">"status"</span>: <span class="str">"done"</span>},
+    {<span class="str">"id"</span>: <span class="num">2</span>, <span class="str">"task"</span>: <span class="str">"Search competitor B pricing"</span>, <span class="str">"tool"</span>: <span class="str">"web_search"</span>, <span class="str">"status"</span>: <span class="str">"done"</span>},
+    {<span class="str">"id"</span>: <span class="num">3</span>, <span class="str">"task"</span>: <span class="str">"Create comparison spreadsheet"</span>, <span class="str">"tool"</span>: <span class="str">"create_file"</span>, <span class="str">"status"</span>: <span class="str">"in_progress"</span>},
+    {<span class="str">"id"</span>: <span class="num">4</span>, <span class="str">"task"</span>: <span class="str">"Draft summary email"</span>, <span class="str">"tool"</span>: <span class="str">"compose_email"</span>, <span class="str">"status"</span>: <span class="str">"pending"</span>}
+  ]
+}</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 09: PATTERNS ======================= -->
+<section id="patterns">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label green"><span class="num">09</span> AGENT PATTERNS</div>
+      <h2 class="section-title">Common Architectures</h2>
+      <p class="section-desc">Over the past two years, several distinct agent patterns have emerged. Each makes different tradeoffs between simplicity, reliability, cost, and capability.</p>
+    </div>
+
+    <div class="card-grid reveal">
+      <div class="card cyan">
+        <div class="card-icon cyan">🔗</div>
+        <h4>ReAct Agent</h4>
+        <p>The foundational pattern. Alternates Thought → Action → Observation in a loop. Simple, reliable, and the most widely used. Each step is a single LLM call that produces reasoning and an action. Works well for tasks requiring 1–10 tool calls. Frameworks: LangChain, LlamaIndex.</p>
+      </div>
+      <div class="card orange">
+        <div class="card-icon orange">📊</div>
+        <h4>Plan-and-Execute</h4>
+        <p>Separates planning from execution. A "planner" LLM generates a full task list upfront, then an "executor" LLM handles each step. The planner reviews and revises the plan between steps. Better for long-horizon tasks (10+ steps) because the plan provides structure. More expensive (2 LLM calls per step).</p>
+      </div>
+      <div class="card purple">
+        <div class="card-icon purple">🔄</div>
+        <h4>LLM Compiler</h4>
+        <p>Generates a task DAG (directed acyclic graph) with dependencies, then executes independent tasks in parallel. Dramatically faster for tasks with parallelizable sub-tasks (e.g., searching multiple sources simultaneously). Complex orchestration logic but significant latency reduction.</p>
+      </div>
+      <div class="card green">
+        <div class="card-icon green">💬</div>
+        <h4>Conversational Agent</h4>
+        <p>Optimized for dialogue. The agent maintains conversation state and can ask clarifying questions, request confirmation before destructive actions, and adapt its approach based on user feedback mid-task. Used in customer support, personal assistants, and interactive workflows.</p>
+      </div>
+      <div class="card red">
+        <div class="card-icon red">🔀</div>
+        <h4>Router Agent</h4>
+        <p>A lightweight "dispatcher" that classifies the user's intent and routes to specialized sub-agents. Each sub-agent is optimized for its domain (code agent, research agent, writing agent). The router's job is just classification — it's fast and cheap. Good for systems with distinct capability domains.</p>
+      </div>
+      <div class="card yellow">
+        <div class="card-icon yellow">🤔</div>
+        <h4>Self-Reflective Agent</h4>
+        <p>After producing a result, the agent evaluates its own output for quality, accuracy, and completeness. If it fails its own quality check, it revises and tries again. This "inner critic" pattern trades latency for reliability and is commonly used when output quality is critical.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 10: MULTI-AGENT ======================= -->
+<section id="multi-agent">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label purple"><span class="num">10</span> MULTI-AGENT SYSTEMS</div>
+      <h2 class="section-title">Agents Working Together</h2>
+      <p class="section-desc">For complex workflows, multiple specialized agents can collaborate. Each agent has a focused role, its own tools, and its own system prompt. A supervisor or messaging protocol coordinates their interactions.</p>
+    </div>
+
+    <div class="diagram-wrapper reveal">
+      <div style="text-align:center; margin-bottom:1.5rem;">
+        <span style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-dim);letter-spacing:0.1em;">MULTI-AGENT TOPOLOGY</span>
+      </div>
+      <svg viewBox="0 0 800 400" class="diagram-svg" style="max-width:800px; margin:0 auto; display:block;">
+        <!-- Supervisor -->
+        <rect x="300" y="20" width="200" height="70" rx="14" fill="rgba(167,139,250,0.12)" stroke="rgba(167,139,250,0.4)" stroke-width="1.5"/>
+        <text x="400" y="50" text-anchor="middle" class="label-title" fill="#a78bfa">Supervisor Agent</text>
+        <text x="400" y="72" text-anchor="middle" class="label-mono" fill="#a78bfa">Routes, delegates, aggregates</text>
+
+        <!-- Lines from supervisor -->
+        <line x1="340" y1="90" x2="130" y2="170" stroke="rgba(167,139,250,0.3)" stroke-width="1" stroke-dasharray="4"/>
+        <line x1="400" y1="90" x2="400" y2="170" stroke="rgba(167,139,250,0.3)" stroke-width="1" stroke-dasharray="4"/>
+        <line x1="460" y1="90" x2="670" y2="170" stroke="rgba(167,139,250,0.3)" stroke-width="1" stroke-dasharray="4"/>
+
+        <!-- Research Agent -->
+        <rect x="30" y="170" width="200" height="70" rx="14" fill="rgba(0,212,255,0.12)" stroke="rgba(0,212,255,0.4)" stroke-width="1.5"/>
+        <text x="130" y="200" text-anchor="middle" class="label-title" fill="#00d4ff">Research Agent</text>
+        <text x="130" y="222" text-anchor="middle" class="label-mono" fill="#00d4ff">web_search, web_fetch</text>
+
+        <!-- Code Agent -->
+        <rect x="300" y="170" width="200" height="70" rx="14" fill="rgba(255,138,0,0.12)" stroke="rgba(255,138,0,0.4)" stroke-width="1.5"/>
+        <text x="400" y="200" text-anchor="middle" class="label-title" fill="#ff8a00">Code Agent</text>
+        <text x="400" y="222" text-anchor="middle" class="label-mono" fill="#ff8a00">exec_code, create_file</text>
+
+        <!-- Writing Agent -->
+        <rect x="570" y="170" width="200" height="70" rx="14" fill="rgba(0,232,143,0.12)" stroke="rgba(0,232,143,0.4)" stroke-width="1.5"/>
+        <text x="670" y="200" text-anchor="middle" class="label-title" fill="#00e88f">Writing Agent</text>
+        <text x="670" y="222" text-anchor="middle" class="label-mono" fill="#00e88f">draft, edit, format</text>
+
+        <!-- Tool boxes -->
+        <rect x="50" y="290" width="160" height="50" rx="8" fill="rgba(0,212,255,0.06)" stroke="rgba(0,212,255,0.2)" stroke-width="1"/>
+        <text x="130" y="320" text-anchor="middle" class="label-small" fill="#9898b0">Search APIs, Databases</text>
+        <line x1="130" y1="240" x2="130" y2="290" stroke="rgba(0,212,255,0.2)" stroke-width="1"/>
+
+        <rect x="320" y="290" width="160" height="50" rx="8" fill="rgba(255,138,0,0.06)" stroke="rgba(255,138,0,0.2)" stroke-width="1"/>
+        <text x="400" y="320" text-anchor="middle" class="label-small" fill="#9898b0">Sandboxed Runtime</text>
+        <line x1="400" y1="240" x2="400" y2="290" stroke="rgba(255,138,0,0.2)" stroke-width="1"/>
+
+        <rect x="590" y="290" width="160" height="50" rx="8" fill="rgba(0,232,143,0.06)" stroke="rgba(0,232,143,0.2)" stroke-width="1"/>
+        <text x="670" y="320" text-anchor="middle" class="label-small" fill="#9898b0">Templates, Style Guide</text>
+        <line x1="670" y1="240" x2="670" y2="290" stroke="rgba(0,232,143,0.2)" stroke-width="1"/>
+
+        <!-- Message bus -->
+        <rect x="100" y="370" width="600" height="24" rx="4" fill="rgba(251,191,36,0.08)" stroke="rgba(251,191,36,0.2)" stroke-width="1"/>
+        <text x="400" y="387" text-anchor="middle" class="label-mono" fill="#fbbf24">Shared Message Bus / State Store</text>
+      </svg>
+    </div>
+
+    <div class="reveal">
+      <div class="prose">
+        <p><strong>Communication patterns</strong> in multi-agent systems typically follow one of three models. In <strong>hierarchical</strong> systems, a supervisor delegates tasks and aggregates results — agents only talk to the supervisor. In <strong>peer-to-peer</strong> systems, agents communicate directly via a message bus, passing intermediate results without a central coordinator. In <strong>sequential pipeline</strong> systems, each agent's output becomes the next agent's input, like an assembly line.</p>
+        <p><strong>Shared state</strong> is the coordination mechanism. A common pattern is a shared "blackboard" or state store where agents read and write intermediate results. The supervisor monitors this state to track progress and detect when the overall task is complete. Each agent reads the parts relevant to its sub-task and writes its results back.</p>
+      </div>
+    </div>
+
+    <div class="reveal">
+      <div class="callout green">
+        <strong>When to use multi-agent?</strong> Multi-agent systems add complexity. Use them when: (1) the task genuinely requires different expertise or tool sets, (2) sub-tasks are parallelizable for latency gains, (3) you need separation of concerns for safety (e.g., a reviewer agent that checks a coder agent's output), or (4) the system is too complex for a single agent's context window.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 11: LIVE DEMO ======================= -->
+<section id="demo">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label yellow"><span class="num">11</span> INTERACTIVE DEMO</div>
+      <h2 class="section-title">Watch an Agent Trace</h2>
+      <p class="section-desc">Select a scenario below to see a step-by-step execution trace of how an agent would handle the task. Each line shows exactly what happens at each stage of the agent loop.</p>
+    </div>
+
+    <div class="reveal">
+      <div class="demo-controls" id="demo-controls">
+        <button class="demo-btn active" data-scenario="weather">🌦 Weather Query</button>
+        <button class="demo-btn" data-scenario="research">🔬 Research Task</button>
+        <button class="demo-btn" data-scenario="code">💻 Code Generation</button>
+        <button class="demo-btn" data-scenario="multi">🔗 Multi-Step Task</button>
+      </div>
+      <div class="demo-output" id="demo-output">
+        <!-- Filled by JS -->
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= FOOTER ======================= -->
+<footer>
+  <div class="container">
+    <p>How LLM Agents Work — A Visual Deep Dive</p>
+    <p style="margin-top:0.5rem; color: var(--text-dim);">Built for understanding. Open source on GitHub Pages.</p>
+  </div>
+</footer>
+
+<!-- ======================= JAVASCRIPT ======================= -->
+<script>
+// ── Scroll Reveal ──
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.classList.add('visible');
+    }
+  });
+}, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' });
+
+document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+// ── Active nav highlighting ──
+const sections = document.querySelectorAll('section[id]');
+const navLinks = document.querySelectorAll('nav.toc a');
+
+window.addEventListener('scroll', () => {
+  let current = '';
+  sections.forEach(sec => {
+    if (window.scrollY >= sec.offsetTop - 120) current = sec.id;
+  });
+  navLinks.forEach(a => {
+    a.classList.toggle('active', a.getAttribute('href') === '#' + current);
+  });
+});
+
+// ── ReAct Trace Animation ──
+const reactTokens = [
+  { type: 'thought', text: 'Thought:' },
+  { type: 'plain', text: 'I need to find current weather for London.' },
+  { type: 'action', text: 'Action:' },
+  { type: 'tool', text: '{"tool":"get_weather","params":{"city":"London"}}' },
+  { type: 'result', text: 'Observation:' },
+  { type: 'plain', text: '{"temp":"12°C","condition":"Partly cloudy","humidity":"68%"}' },
+  { type: 'thought', text: 'Thought:' },
+  { type: 'plain', text: 'I have the weather data. I can answer now.' },
+  { type: 'result', text: 'Final Answer:' },
+  { type: 'plain', text: 'London is currently 12°C and partly cloudy with 68% humidity.' },
+];
+
+const reactContainer = document.getElementById('react-trace');
+let reactRendered = false;
+
+const reactObserver = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting && !reactRendered) {
+      reactRendered = true;
+      reactTokens.forEach((t, i) => {
+        setTimeout(() => {
+          const span = document.createElement('span');
+          span.className = `token ${t.type}`;
+          span.textContent = t.text;
+          span.style.animationDelay = '0s';
+          reactContainer.appendChild(span);
+        }, i * 280);
+      });
+    }
+  });
+}, { threshold: 0.3 });
+reactObserver.observe(reactContainer);
+
+// ── Interactive Demo ──
+const scenarios = {
+  weather: [
+    { tag: 'thought', msg: 'The user wants current weather in Tokyo. I should use the get_weather tool.' },
+    { tag: 'action', msg: 'Calling get_weather(city="Tokyo")' },
+    { tag: 'tool', msg: '→ Executing HTTP GET api.weather.com/v1/current?q=Tokyo' },
+    { tag: 'result', msg: '← {"temp": "22°C", "condition": "Sunny", "wind": "12 km/h NE", "humidity": "45%"}' },
+    { tag: 'thought', msg: 'Got the weather data. Temperature is 22°C, sunny conditions. I can provide a complete answer.' },
+    { tag: 'final', msg: 'Tokyo is currently 22°C with sunny skies. Wind is light at 12 km/h from the northeast, with 45% humidity — a beautiful day!' },
+  ],
+  research: [
+    { tag: 'thought', msg: 'The user wants to know about recent advances in battery technology. I\'ll search for recent papers and news.' },
+    { tag: 'action', msg: 'Calling web_search(query="solid state battery breakthroughs 2025")' },
+    { tag: 'tool', msg: '→ Executing search via Bing API...' },
+    { tag: 'result', msg: '← 8 results returned. Top result: "Toyota announces 1000km solid-state battery for 2027 production"' },
+    { tag: 'thought', msg: 'Good initial results. Let me get more detail on the Toyota announcement and check for other manufacturers.' },
+    { tag: 'action', msg: 'Calling web_fetch(url="https://example.com/toyota-battery-2025")' },
+    { tag: 'tool', msg: '→ Fetching full article (2,340 tokens)...' },
+    { tag: 'result', msg: '← Article details: 1,200 Wh/L energy density, 10-minute charge, partnership with Idemitsu Kosan...' },
+    { tag: 'thought', msg: 'I now have detailed information. Let me synthesize this into a comprehensive answer covering key developments.' },
+    { tag: 'final', msg: 'Here are the major solid-state battery developments in 2025: Toyota has announced production-ready cells with 1,200 Wh/L density targeting 1000km range by 2027...' },
+  ],
+  code: [
+    { tag: 'thought', msg: 'The user wants a Python function to find prime factors. I\'ll write an efficient implementation and test it.' },
+    { tag: 'action', msg: 'Calling exec_code(language="python", code="def prime_factors(n):...")' },
+    { tag: 'tool', msg: '→ Executing in sandboxed Python 3.11 environment...' },
+    { tag: 'result', msg: '← Execution successful. Tests passed: prime_factors(84) → [2, 2, 3, 7] ✓' },
+    { tag: 'thought', msg: 'The function works correctly. Let me verify edge cases: n=1, n=2, n=0, large primes.' },
+    { tag: 'action', msg: 'Calling exec_code(language="python", code="assert prime_factors(1)==[] ...")' },
+    { tag: 'tool', msg: '→ Running edge case tests...' },
+    { tag: 'result', msg: '← All 6 assertions passed ✓ (including n=1, n=2, n=97, n=0 handled)' },
+    { tag: 'final', msg: 'Here\'s your prime factorization function with full test coverage. It uses trial division up to √n for efficiency...' },
+  ],
+  multi: [
+    { tag: 'thought', msg: 'Complex request: "Find the top 3 Italian restaurants near me, check reviews, and make a reservation." I\'ll break this into sub-tasks.' },
+    { tag: 'action', msg: 'Calling places_search(query="top Italian restaurants nearby", max_results=5)' },
+    { tag: 'tool', msg: '→ Querying Google Places API with location bias...' },
+    { tag: 'result', msg: '← 5 results: Osteria Bella (4.8★), Trattoria Roma (4.6★), Il Forno (4.7★), Luigi\'s (4.3★), Casa Mia (4.5★)' },
+    { tag: 'thought', msg: 'Got 5 options. Top 3 by rating: Osteria Bella, Il Forno, Trattoria Roma. Now let me check detailed reviews.' },
+    { tag: 'action', msg: 'Calling web_search(query="Osteria Bella restaurant reviews 2025")' },
+    { tag: 'tool', msg: '→ Searching for detailed reviews...' },
+    { tag: 'result', msg: '← Reviews highlight: "best handmade pasta in the city", "intimate atmosphere", "book 2 weeks ahead"' },
+    { tag: 'thought', msg: 'Osteria Bella looks excellent. Now I need to check availability and attempt a reservation.' },
+    { tag: 'action', msg: 'Calling restaurant_reserve(name="Osteria Bella", date="2025-03-15", party=2, time="19:30")' },
+    { tag: 'tool', msg: '→ Connecting to OpenTable API...' },
+    { tag: 'result', msg: '← Reservation confirmed! Confirmation #OB-2847. Party of 2, March 15 at 7:30 PM.' },
+    { tag: 'final', msg: 'Done! I found the top 3 Italian restaurants near you and booked Osteria Bella (4.8★) for March 15 at 7:30 PM. Confirmation #OB-2847.' },
+  ],
+};
+
+const demoOutput = document.getElementById('demo-output');
+const demoControls = document.getElementById('demo-controls');
+let currentAnimation = null;
+
+function runScenario(name) {
+  if (currentAnimation) clearTimeout(currentAnimation);
+  demoOutput.innerHTML = '';
+  const steps = scenarios[name];
+  steps.forEach((step, i) => {
+    currentAnimation = setTimeout(() => {
+      const line = document.createElement('div');
+      line.className = 'trace-line';
+      line.style.animationDelay = '0s';
+      line.innerHTML = `<span class="trace-tag ${step.tag}">${step.tag.toUpperCase()}</span><span class="trace-msg">${step.msg}</span>`;
+      demoOutput.appendChild(line);
+      demoOutput.scrollTop = demoOutput.scrollHeight;
+    }, i * 450);
+  });
+}
+
+demoControls.addEventListener('click', (e) => {
+  const btn = e.target.closest('.demo-btn');
+  if (!btn) return;
+  demoControls.querySelectorAll('.demo-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  runScenario(btn.dataset.scenario);
+});
+
+// Initial demo
+runScenario('weather');
+
+// ── Smooth scroll for anchor links ──
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener('click', (e) => {
+    e.preventDefault();
+    const target = document.querySelector(a.getAttribute('href'));
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+});
+</script>
+
+</body>
+</html>
